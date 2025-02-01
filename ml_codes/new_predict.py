@@ -317,7 +317,7 @@ def main():
     customer = {
         'age': 35,
         'gender': 'F',
-        'city': 'Mumbai',
+        'city': 'Pune',
         'state': 'Maharashtra',
         'membership_tier': 'Gold'
     }

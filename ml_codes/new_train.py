@@ -273,14 +273,6 @@ class RetailPredictor:
         self.save_model()
         
         return best_accuracy
-        
-        print("\nTop 15 Most Important Features:")
-        print(importance.head(15))
-        
-        # Save model
-        self.save_model()
-        
-        return accuracy
 
     def save_model(self, filename='retail_optimized_model'):
         """Save model and preprocessing objects"""
