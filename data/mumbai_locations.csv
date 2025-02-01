@@ -1,0 +1,18 @@
+location_id,area_name,tier,population,latitude,longitude,primary_demographic,commercial_score,residential_density,public_transport_accessibility,population_density
+LOC003,Bandra West,1,382399,19.0596,72.8295,High Income,0.9,High,0.9,382.399
+LOC006,Worli,1,182323,19.0178,72.8478,High Income,0.9,High,0.85,182.323
+LOC005,Juhu,1,139679,19.1075,72.8263,High Income,0.8,Medium,0.75,69.8395
+LOC000,Colaba,1,126738,18.9067,72.8147,High Income,0.9,High,0.95,126.738
+LOC002,Fort,1,94175,18.9345,72.8352,High Income,0.95,Medium,0.9,47.0875
+LOC001,Nariman Point,1,81760,18.9256,72.8242,High Income,1.0,Medium,0.95,40.88
+LOC012,Goregaon,2,479919,19.1663,72.8526,Middle Income,0.7,High,0.75,479.919
+LOC013,Malad,2,471233,19.1873,72.8484,Middle Income,0.65,Very High,0.7,942.466
+LOC004,Andheri West,2,465601,19.1136,72.8697,Middle Income,0.85,Very High,0.85,931.202
+LOC009,Chembur,2,416645,19.0522,72.9005,Middle Income,0.7,High,0.8,416.645
+LOC010,Ghatkopar,2,406852,19.0858,72.9089,Middle Income,0.75,Very High,0.85,813.704
+LOC007,Dadar,2,375632,19.0178,72.8478,Middle Income,0.8,Very High,0.9,751.264
+LOC015,Vashi,2,281004,19.0745,72.9978,Middle Income,0.75,Medium,0.8,140.502
+LOC016,Nerul,2,269037,19.0362,73.0184,Middle Income,0.7,Medium,0.75,134.5185
+LOC008,Parel,2,255055,18.9977,72.8376,Middle Income,0.75,High,0.85,255.055
+LOC011,Kurla,3,546990,19.0726,72.8845,Lower Middle Income,0.6,Very High,0.8,1093.98
+LOC014,Kandivali,3,421364,19.2037,72.8511,Lower Middle Income,0.6,High,0.65,421.364

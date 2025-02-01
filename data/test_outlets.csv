@@ -1,0 +1,11 @@
+outlet_id,outlet_name,category,brand,location_id,target_demographic,avg_transaction_value,outlet_size,parking_available,area_type,location_tier,monthly_footfall,conversion_rate,customer_satisfaction,luxury_index,commercial_viability,competition_score
+TEST_OUT000,Honda - Goregaon,Mid_Range_Automotive,Honda,LOC012,Middle Income,4573.428918907629,Small,True,Middle Income,2,2054,0.5435307188910286,3.208474279042225,35.0,70.0,100
+TEST_OUT001,Hyundai - Dadar,Mid_Range_Automotive,Hyundai,LOC007,Middle Income,7382.220386207424,Small,True,Middle Income,2,2249,0.7801251892075518,3.193636669892188,40.0,80.0,100
+TEST_OUT002,BMW - Juhu,Luxury_Automotive,BMW,LOC005,High Income,79246.44084769778,Large,True,High Income,1,855,0.7721034617328255,4.0716083433421115,90.0,80.0,100
+TEST_OUT003,Prada - Juhu,Luxury_Fashion,Prada,LOC005,High Income,10361.581375191045,Large,True,High Income,1,778,0.6110019011804935,3.5065300741671646,90.0,80.0,100
+TEST_OUT004,Audi - Colaba,Luxury_Automotive,Audi,LOC000,High Income,249165.74171448263,Large,True,High Income,1,1057,0.6311760147925749,3.801755456756873,90.0,90.0,100
+TEST_OUT005,Honda - Malad,Mid_Range_Automotive,Honda,LOC013,Middle Income,22876.043733410457,Medium,True,Middle Income,2,2055,0.24427697167489998,3.0951367296725203,32.5,65.0,100
+TEST_OUT006,Gucci - Fort,Luxury_Fashion,Gucci,LOC002,High Income,74203.38003183418,Large,True,High Income,1,984,0.7713089692469562,4.518389369151047,90.0,95.0,100
+TEST_OUT007,BMW - Juhu,Luxury_Automotive,BMW,LOC005,High Income,260311.986918127,Large,True,High Income,1,827,0.71680375533201,3.757572866072119,90.0,80.0,60
+TEST_OUT008,BMW - Nariman Point,Luxury_Automotive,BMW,LOC001,High Income,56900.935102750285,Large,True,High Income,1,777,0.5998178403914647,4.104428951772566,90.0,100.0,100
+TEST_OUT009,Samsung Premium - Juhu,Premium_Electronics,Samsung Premium,LOC005,Middle Income,13901.969171899145,Medium,False,High Income,1,2837,0.5208033513506446,2.9942821864600924,40.0,80.0,100
