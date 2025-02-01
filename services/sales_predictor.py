@@ -1,16 +1,9 @@
-from typing import List, Dict
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from models.response_models import SalesForecast, SalesForecastResponse
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from pymongo import MongoClient
 from datetime import datetime, timedelta
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.seasonal import seasonal_decompose
+from pymongo import MongoClient
 
 class SalesProfitPredictor:
     def __init__(self, mongodb_uri='mongodb://localhost:27017/'):
@@ -18,14 +11,7 @@ class SalesProfitPredictor:
         self.db = self.client['indian_retail']
     
     def prepare_sales_data(self, start_date=None, end_date=None, query_filter=None) -> pd.DataFrame:
-        """
-        Prepare daily sales data from transactions
-        
-        Args:
-            start_date: Start date for filtering
-            end_date: End date for filtering
-            query_filter: Additional MongoDB query filters
-        """
+        """Prepare daily sales data from transactions"""
         query = {}
         if start_date or end_date:
             query['date'] = {}
@@ -34,7 +20,6 @@ class SalesProfitPredictor:
             if end_date:
                 query['date']['$lte'] = end_date
         
-        # Add additional filters if provided
         if query_filter:
             query.update(query_filter)
         
@@ -66,21 +51,20 @@ class SalesProfitPredictor:
         return daily_sales.reset_index().rename(columns={'index': 'date'})
     
     def extract_patterns(self, sales_series):
-        """
-        Extract daily and weekly patterns from the sales data
-        """
-        # Calculate daily pattern
+        """Extract daily and weekly patterns from the sales data"""
         daily_pattern = sales_series.groupby(sales_series.index.dayofweek).mean()
         daily_pattern = daily_pattern / daily_pattern.mean()
         
-        # Calculate weekly pattern
         weekly_sales = sales_series.resample('W').mean()
         weekly_pattern = weekly_sales.rolling(window=4, center=True).mean()
         
         return daily_pattern, weekly_pattern
 
     def forecast_sales(self, forecast_steps=30):
-        """Forecast sales with preserved seasonal patterns"""
+        """
+        Forecast sales with preserved seasonal patterns and include historical data
+        Returns both historical and forecasted data in a single DataFrame
+        """
         # Prepare sales data
         sales_df = self.prepare_sales_data()
         sales_series = sales_df.set_index('date')['total_amount']
@@ -93,14 +77,11 @@ class SalesProfitPredictor:
         cleaned_series[cleaned_series > Q3 + 1.5 * IQR] = Q3 + 1.5 * IQR
         cleaned_series[cleaned_series < Q1 - 1.5 * IQR] = Q1 - 1.5 * IQR
         
-        # Extract patterns
-        daily_pattern, weekly_pattern = self.extract_patterns(cleaned_series)
-        
         try:
             # Decompose the series
             decomposition = seasonal_decompose(
                 cleaned_series, 
-                period=7,  # Weekly seasonality
+                period=7,
                 extrapolate_trend='freq'
             )
             
@@ -115,23 +96,15 @@ class SalesProfitPredictor:
                 periods=forecast_steps
             )
             
-            # Apply patterns to create the final forecast
+            # Generate forecast values with patterns
+            daily_pattern, _ = self.extract_patterns(cleaned_series)
             forecast_values = []
             for i, date in enumerate(forecast_dates):
-                # Get base trend value
                 trend_value = trend_forecast[i]
-                
-                # Apply daily pattern
                 day_factor = daily_pattern[date.dayofweek]
-                
-                # Calculate forecast with patterns
                 forecast_value = trend_value * day_factor
-                
-                # Add some controlled randomness to mimic historical volatility
-                volatility = cleaned_series.std() * 0.3
-                random_factor = np.random.normal(1, 0.1)  # 10% random variation
+                random_factor = np.random.normal(1, 0.1)
                 forecast_value *= random_factor
-                
                 forecast_values.append(forecast_value)
             
             forecast_values = np.array(forecast_values)
@@ -143,26 +116,37 @@ class SalesProfitPredictor:
             # Create forecast dataframe
             forecast_df = pd.DataFrame({
                 'date': forecast_dates,
-                'forecasted_sales': forecast_values,
+                'sales': forecast_values,
                 'lower_ci': forecast_values - forecast_std,
-                'upper_ci': forecast_values + forecast_std
+                'upper_ci': forecast_values + forecast_std,
+                'is_forecast': True
             })
             
-            # Ensure non-negative values
-            forecast_df['lower_ci'] = forecast_df['lower_ci'].clip(lower=0)
+            # Create historical dataframe
+            historical_df = pd.DataFrame({
+                'date': sales_series.index,
+                'sales': sales_series.values,
+                'lower_ci': None,
+                'upper_ci': None,
+                'is_forecast': False
+            })
             
-            return forecast_df
+            # Combine historical and forecast data
+            combined_df = pd.concat([historical_df, forecast_df], ignore_index=True)
+            
+            # Ensure non-negative values
+            combined_df['lower_ci'] = combined_df['lower_ci'].clip(lower=0)
+            combined_df['sales'] = combined_df['sales'].clip(lower=0)
+            
+            return combined_df
             
         except Exception as e:
             print(f"Error in forecasting: {e}")
             return self._fallback_forecast(cleaned_series, forecast_steps)
     
     def _fallback_forecast(self, sales_series, forecast_steps):
-        """Fallback forecasting method with patterns"""
-        # Extract patterns
+        """Fallback forecasting method with patterns, including historical data"""
         daily_pattern, _ = self.extract_patterns(sales_series)
-        
-        # Calculate base level and trend
         recent_data = sales_series[-30:]
         base_level = recent_data.mean()
         
@@ -172,92 +156,53 @@ class SalesProfitPredictor:
             periods=forecast_steps
         )
         
-        # Generate forecast with patterns
+        # Generate forecast values
         forecast_values = []
         for date in forecast_dates:
-            # Apply daily pattern
             day_factor = daily_pattern[date.dayofweek]
             forecast_value = base_level * day_factor
-            
-            # Add controlled randomness
-            volatility = sales_series.std() * 0.3
             random_factor = np.random.normal(1, 0.1)
             forecast_value *= random_factor
-            
             forecast_values.append(forecast_value)
         
         forecast_values = np.array(forecast_values)
-        
-        # Calculate confidence intervals
         std = sales_series.std() * 0.4
+        
+        # Create forecast dataframe
         forecast_df = pd.DataFrame({
             'date': forecast_dates,
-            'forecasted_sales': forecast_values,
+            'sales': forecast_values,
             'lower_ci': forecast_values - std,
-            'upper_ci': forecast_values + std
+            'upper_ci': forecast_values + std,
+            'is_forecast': True
         })
         
+        # Create historical dataframe
+        historical_df = pd.DataFrame({
+            'date': sales_series.index,
+            'sales': sales_series.values,
+            'lower_ci': None,
+            'upper_ci': None,
+            'is_forecast': False
+        })
+        
+        # Combine historical and forecast data
+        combined_df = pd.concat([historical_df, forecast_df], ignore_index=True)
+        
         # Ensure non-negative values
-        forecast_df['lower_ci'] = forecast_df['lower_ci'].clip(lower=0)
+        combined_df['lower_ci'] = combined_df['lower_ci'].clip(lower=0)
+        combined_df['sales'] = combined_df['sales'].clip(lower=0)
         
-        return forecast_df
-    
-    def visualize_sales_forecast(self, forecast_df):
-        """Previous visualization implementation with adjusted y-axis"""
-        sales_df = self.prepare_sales_data()
-        historical_sales = sales_df.set_index('date')['total_amount']
-        
-        plt.figure(figsize=(15, 8))
-        
-        # Plot historical data
-        plt.plot(historical_sales.index, historical_sales.values,
-                label='Historical Sales', color='blue', alpha=0.6)
-        
-        # Plot forecast
-        plt.plot(forecast_df['date'], forecast_df['forecasted_sales'],
-                color='red', label='Forecasted Sales', linewidth=2)
-        
-        # Plot confidence intervals
-        plt.fill_between(
-            forecast_df['date'],
-            forecast_df['lower_ci'],
-            forecast_df['upper_ci'],
-            color='red', alpha=0.2,
-            label='95% Confidence Interval'
-        )
-        
-        # Add rolling average
-        rolling_avg = historical_sales.rolling(window=7, center=True).mean()
-        plt.plot(rolling_avg.index, rolling_avg.values,
-                color='green', label='7-day Moving Average',
-                linestyle='--', alpha=0.5)
-        
-        # Set y-axis limits based on data
-        all_values = np.concatenate([
-            historical_sales.values,
-            forecast_df['upper_ci'].values,
-            forecast_df['lower_ci'].values
-        ])
-        plt.ylim(0, np.percentile(all_values, 99))
-        
-        plt.title('Sales Forecast with Confidence Intervals')
-        plt.xlabel('Date')
-        plt.ylabel('Sales Amount')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig('sales_forecast.png')
-        plt.close()
-
+        return combined_df
 
 class SalesPredictorService:
     def __init__(self, mongodb_uri='mongodb://localhost:27017/'):
         self.predictor = SalesProfitPredictor(mongodb_uri)
 
-    async def get_sales_forecast(self, store_id: str = None, days: int = 30) -> SalesForecastResponse:
-        """Get sales forecast for specific store or all stores"""
+    async def get_sales_forecast(self, store_id: str = None, days: int = 30):
+        """Get sales forecast with historical data for specific store or all stores"""
         try:
-            # Modify prepare_sales_data query if store_id is provided
+            # Prepare data based on store_id
             if store_id:
                 sales_df = self.predictor.prepare_sales_data(
                     query_filter={'store_id': store_id}
@@ -265,34 +210,36 @@ class SalesPredictorService:
             else:
                 sales_df = self.predictor.prepare_sales_data()
 
-            # Get forecast
-            forecast_df = self.predictor.forecast_sales(forecast_steps=days)
+            # Get forecast with historical data
+            combined_df = self.predictor.forecast_sales(forecast_steps=days)
             
             # Convert to response format
             forecasts = [
-                SalesForecast(
-                    date=row['date'],
-                    forecasted_sales=float(row['forecasted_sales']),
-                    lower_ci=float(row['lower_ci']),
-                    upper_ci=float(row['upper_ci'])
-                )
-                for _, row in forecast_df.iterrows()
+                {
+                    'date': row['date'],
+                    'sales': float(row['sales']),
+                    'lower_ci': float(row['lower_ci']) if pd.notna(row['lower_ci']) else None,
+                    'upper_ci': float(row['upper_ci']) if pd.notna(row['upper_ci']) else None,
+                    'is_forecast': bool(row['is_forecast'])
+                }
+                for _, row in combined_df.iterrows()
             ]
             
             # Calculate summary statistics
+            forecast_data = combined_df[combined_df['is_forecast']]
             summary = {
-                'mean_forecast': float(forecast_df['forecasted_sales'].mean()),
-                'min_forecast': float(forecast_df['forecasted_sales'].min()),
-                'max_forecast': float(forecast_df['forecasted_sales'].max()),
-                'total_forecast': float(forecast_df['forecasted_sales'].sum()),
+                'mean_forecast': float(forecast_data['sales'].mean()),
+                'min_forecast': float(forecast_data['sales'].min()),
+                'max_forecast': float(forecast_data['sales'].max()),
+                'total_forecast': float(forecast_data['sales'].sum()),
                 'confidence_width': float(
-                    (forecast_df['upper_ci'] - forecast_df['lower_ci']).mean()
+                    (forecast_data['upper_ci'] - forecast_data['lower_ci']).mean()
                 )
             }
             
-            return SalesForecastResponse(
-                forecasts=forecasts,
-                summary=summary
-            )
+            return {
+                'forecasts': forecasts,
+                'summary': summary
+            }
         except Exception as e:
             raise Exception(f"Error generating sales forecast: {str(e)}")

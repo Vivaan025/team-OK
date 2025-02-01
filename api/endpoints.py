@@ -10,9 +10,10 @@ from services.store_analyzer import MLStoreAnalyzer
 from services.preference_predictor import RetailPreferencePredictor
 from datetime import datetime, timedelta
 from services.retail_intelligence import RetailIntelligenceService
-from models.response_models import CustomerInsights, CustomerSegment, ProductRecommendation, StorePlacementRecommendation, SalesForecastResponse
+from models.response_models import CustomerInsights, CustomerSegment, ProductRecommendation, StorePlacementRecommendation, SalesForecastResponse, RevenueSuggestion, StoreSuggestionsResponse
 from models.request_models import StoreFeatures, PlacementRequest
 from services.sales_predictor import SalesPredictorService
+from services.revenue_suggestions import RevenueSuggestionService
 
 router = APIRouter()
 
@@ -23,12 +24,46 @@ def get_analyzer():
 def get_predictor():
     return RetailPreferencePredictor()
 
-@router.get("/stores", response_model=List[str])
+@router.get("/stores", response_model=List[dict])
 async def get_stores(analyzer: MLStoreAnalyzer = Depends(get_analyzer)):
-    """Get list of all store IDs"""
+    """Get list of all stores with their details"""
     try:
-        stores = list(analyzer.db.stores.find({}, {'store_id': 1}))
-        return [store['store_id'] for store in stores]
+        # Retrieve all stores, excluding the MongoDB internal '_id' field
+        stores = list(analyzer.db.stores.find({}, {'_id': 0}))
+        return stores
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/transactions", response_model=List[dict])
+async def get_transactions(analyzer: MLStoreAnalyzer = Depends(get_analyzer)):
+    """Get list of all stores with their details"""
+    try:
+        # Retrieve all stores, excluding the MongoDB internal '_id' field
+        stores = list(analyzer.db.transactions.find({}, {'_id': 0}))
+        return stores
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/customers", response_model=List[dict])
+async def get_customers(analyzer: MLStoreAnalyzer = Depends(get_analyzer)):
+    """Get list of all stores with their details"""
+    try:
+        # Retrieve all stores, excluding the MongoDB internal '_id' field
+        stores = list(analyzer.db.customers.find({}, {'_id': 0}))
+        return stores
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/product/{product_id}", response_model=Optional[dict])
+async def get_product(product_id: str, analyzer: MLStoreAnalyzer = Depends(get_analyzer)):
+    """Get a single transaction by ID"""
+    try:
+        transaction = analyzer.db.products.find_one({"product_id": product_id}, {'_id': 0})
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        return transaction
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -256,5 +291,63 @@ async def get_store_sales_forecast(
     """Get sales forecast for a specific store"""
     try:
         return await service.get_sales_forecast(store_id=store_id, days=days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def get_suggestion_service():
+    return RevenueSuggestionService()
+
+@router.get(
+    "/suggestions/{store_id}",
+    response_model=StoreSuggestionsResponse,
+    summary="Get revenue improvement suggestions for a store"
+)
+async def get_store_suggestions(
+    store_id: str,
+    days: int = Query(90, description="Analysis period in days"),
+    service: RevenueSuggestionService = Depends(get_suggestion_service)
+):
+    """Get comprehensive revenue improvement suggestions for a specific store"""
+    try:
+        suggestions = await service.analyze_store_performance(store_id, days)
+        return suggestions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/top-products/{store_id}",
+    response_model=List[RevenueSuggestion],
+    summary="Get product-specific revenue opportunities"
+)
+async def get_product_opportunities(
+    store_id: str,
+    min_revenue: float = Query(0, description="Minimum revenue threshold"),
+    category: Optional[str] = None,
+    service: RevenueSuggestionService = Depends(get_suggestion_service)
+):
+    """Get product-specific revenue opportunities for a store"""
+    try:
+        suggestions = await service.analyze_product_opportunities(
+            store_id,
+            min_revenue=min_revenue,
+            category=category
+        )
+        return suggestions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/pricing-analysis/{store_id}",
+    response_model=List[RevenueSuggestion],
+    summary="Get pricing optimization suggestions"
+)
+async def get_pricing_suggestions(
+    store_id: str,
+    service: RevenueSuggestionService = Depends(get_suggestion_service)
+):
+    """Get pricing optimization suggestions for a store"""
+    try:
+        suggestions = await service.analyze_pricing_opportunities(store_id)
+        return suggestions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

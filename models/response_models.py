@@ -1,5 +1,5 @@
 # app/models/response_models.py
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -70,10 +70,75 @@ class StorePlacementRecommendation(BaseModel):
 
 class SalesForecast(BaseModel):
     date: datetime
-    forecasted_sales: float
-    lower_ci: float
-    upper_ci: float
+    sales: float
+    lower_ci: Optional[float] = None
+    upper_ci: Optional[float] = None
+    is_forecast: bool = True
+
+    @validator('lower_ci', 'upper_ci', pre=True)
+    def handle_none_confidence_intervals(cls, v, values):
+        if v is None:
+            # If we have forecasted_sales, calculate CI based on standard deviation
+            if 'sales' in values:
+                forecast = values['sales']
+                # Using a default confidence interval of ±20% if none provided
+                margin = forecast * 0.2
+                return forecast - margin if v is values.get('lower_ci') else forecast + margin
+            return 0.0  # fallback default
+        return v
+
+    @validator('upper_ci')
+    def upper_ci_must_be_greater(cls, v, values):
+        if v is not None and 'lower_ci' in values and values['lower_ci'] is not None:
+            if v <= values['lower_ci']:
+                # If upper_ci is less than lower_ci, adjust it to be 20% above forecasted_sales
+                forecast = values.get('forecasted_sales', 0)
+                return forecast * 1.2
+        return v
 
 class SalesForecastResponse(BaseModel):
     forecasts: List[SalesForecast]
-    summary: Dict[str, float]
+    summary: Dict[str, float] = {}
+
+
+class RevenueSuggestion(BaseModel):
+    type: str
+    suggestion: str
+    priority: str
+    metrics: Dict
+    impact_estimate: Optional[float]
+    implementation_difficulty: str
+    timeframe: str
+
+class RevenueSuggestionResponse(BaseModel):
+    type: str
+    suggestion: str
+    priority: str
+    metrics: dict
+    impact_estimate: float
+    implementation_difficulty: str
+    timeframe: str
+
+class StoreSuggestionsResponse(BaseModel):
+    product_suggestions: List[RevenueSuggestionResponse]
+    pricing_suggestions: List[RevenueSuggestionResponse]
+    inventory_suggestions: List[RevenueSuggestionResponse]
+    timing_suggestions: List[RevenueSuggestionResponse]
+    customer_suggestions: List[RevenueSuggestionResponse]
+
+class ProductMetrics(BaseModel):
+    total_quantity: int
+    total_revenue: float
+    transactions: int
+    prices: List[float]
+    avg_price: Optional[float] = None
+    price_variance: Optional[float] = None
+    revenue_per_transaction: Optional[float] = None
+
+class StoreSuggestions(BaseModel):
+    product_suggestions: List[RevenueSuggestion]
+    pricing_suggestions: List[RevenueSuggestion]
+    inventory_suggestions: List[RevenueSuggestion]
+    timing_suggestions: List[RevenueSuggestion]
+    customer_suggestions: List[RevenueSuggestion]
+
