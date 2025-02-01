@@ -22,6 +22,40 @@ INDIAN_CITIES = {
     'Telangana': ['Hyderabad', 'Warangal', 'Nizamabad', 'Karimnagar', 'Khammam']
 }
 
+CITY_AREAS = {
+    'Mumbai': {
+        'areas': ['Andheri', 'Bandra', 'Colaba', 'Powai', 'Juhu', 'Worli', 'Malad', 'Borivali', 'Dadar', 'Chembur'],
+        'roads': ['S.V. Road', 'Link Road', 'Western Express Highway', 'Eastern Express Highway', 'Marine Drive'],
+        'landmarks': ['Near Railway Station', 'Near Metro Station', 'Opposite Mall', 'Near School', 'Near Market'],
+        'pin_codes': ['400001', '400051', '400069', '400072', '400092']
+    },
+    'Pune': {
+        'areas': ['Koregaon Park', 'Kalyani Nagar', 'Viman Nagar', 'Kothrud', 'Aundh', 'Hadapsar', 'Baner', 'Hinjewadi'],
+        'roads': ['Karve Road', 'Laxmi Road', 'FC Road', 'MG Road', 'JM Road'],
+        'landmarks': ['Near IT Park', 'Near University', 'Opposite Garden', 'Near Hospital', 'Near Mall'],
+        'pin_codes': ['411001', '411006', '411014', '411028', '411045']
+    },
+    'Bangalore': {
+        'areas': ['Koramangala', 'Indiranagar', 'Whitefield', 'JP Nagar', 'HSR Layout', 'Marathahalli', 'Electronic City'],
+        'roads': ['MG Road', 'Brigade Road', 'Residency Road', 'Outer Ring Road', 'Old Airport Road'],
+        'landmarks': ['Near Tech Park', 'Near Metro Station', 'Opposite Lake', 'Near Mall', 'Near Market'],
+        'pin_codes': ['560001', '560034', '560037', '560066', '560095']
+    },
+    'Chennai': {
+        'areas': ['T Nagar', 'Adyar', 'Anna Nagar', 'Velachery', 'Mylapore', 'Besant Nagar', 'Guindy', 'Porur'],
+        'roads': ['Anna Salai', 'Mount Road', 'ECR', 'OMR', 'Poonamallee High Road'],
+        'landmarks': ['Near Beach', 'Near Metro', 'Opposite Park', 'Near Temple', 'Near Market'],
+        'pin_codes': ['600001', '600020', '600040', '600042', '600119']
+    },
+    'Hyderabad': {
+        'areas': ['Banjara Hills', 'Jubilee Hills', 'HITEC City', 'Gachibowli', 'Madhapur', 'Kukatpally', 'Secunderabad'],
+        'roads': ['Tank Bund Road', 'Necklace Road', 'MG Road', 'SP Road', 'Begumpet Road'],
+        'landmarks': ['Near Hi-Tech City', 'Near Metro Station', 'Opposite Mall', 'Near Lake', 'Near Park'],
+        'pin_codes': ['500001', '500034', '500081', '500084', '500032']
+    }
+}
+
+
 # Store categories
 STORE_CATEGORIES = ['Hypermarket', 'Supermarket', 'Premium Store', 'Express Store', 'Wholesale Club']
 
@@ -90,21 +124,53 @@ class IndianRetailSeeder:
         """Generate store data with realistic Indian context"""
         stores = []
         
+        def generate_city_specific_address(city: str, area: str) -> dict:
+            """Generate address specific to a city"""
+            city_data = CITY_AREAS.get(city, None)
+            if not city_data:
+                # Fallback for cities not in CITY_AREAS
+                return {
+                    'address': fake.street_address(),
+                    'pincode': fake.postcode()
+                }
+                
+            road = random.choice(city_data['roads'])
+            landmark = random.choice(city_data['landmarks'])
+            building_no = random.randint(1, 999)
+            pincode = random.choice(city_data['pin_codes'])
+            
+            address = f"{building_no}, {area}, {road}, {landmark}, {city} - {pincode}"
+            return {
+                'address': address,
+                'pincode': pincode
+            }
+        
         for _ in range(num_stores):
             state = random.choice(list(INDIAN_CITIES.keys()))
             city = random.choice(INDIAN_CITIES[state])
             store_id = str(uuid.uuid4())
             self.store_ids.append(store_id)
             
+            # Get city-specific area and address
+            if city in CITY_AREAS:
+                area = random.choice(CITY_AREAS[city]['areas'])
+                address_info = generate_city_specific_address(city, area)
+            else:
+                area = f"Area {random.randint(1, 10)}"
+                address_info = {
+                    'address': fake.street_address(),
+                    'pincode': fake.postcode()
+                }
+            
             store = {
                 'store_id': store_id,
-                'name': f"IndianMart {city} {fake.random_int(1, 5)}",
+                'name': f"IndianMart {area} {random.randint(1, 5)}",
                 'category': random.choice(STORE_CATEGORIES),
                 'location': {
                     'state': state,
                     'city': city,
-                    'address': fake.address(),
-                    'pincode': fake.postcode(),
+                    'address': address_info['address'],
+                    'pincode': address_info['pincode'],
                     'coordinates': {
                         'latitude': float(fake.latitude()),
                         'longitude': float(fake.longitude())
@@ -115,8 +181,10 @@ class IndianRetailSeeder:
                     'email': fake.company_email(),
                     'manager_name': fake.name()
                 },
-                'amenities': random.sample(STORE_AMENITIES, 
-                                         random.randint(5, len(STORE_AMENITIES))),
+                'amenities': random.sample(
+                    STORE_AMENITIES, 
+                    random.randint(5, len(STORE_AMENITIES))
+                ),
                 'ratings': {
                     'overall': round(random.uniform(3.5, 4.8), 1),
                     'service': round(random.uniform(3.5, 4.8), 1),
@@ -127,13 +195,15 @@ class IndianRetailSeeder:
                     'weekend': '9:00 AM - 11:00 PM'
                 },
                 'established_date': fake.date_between(
-                    start_date='-10y', end_date='-1y').strftime('%Y-%m-%d')
+                    start_date='-10y', 
+                    end_date='-1y'
+                ).strftime('%Y-%m-%d')
             }
             stores.append(store)
         
         db.stores.insert_many(stores)
         return stores
-
+    
     def generate_products(self, num_products: int = 1000) -> List[Dict]:
         """Generate product data with Indian context"""
         products = []
