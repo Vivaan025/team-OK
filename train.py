@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import xgboost as xgb
+import xgboost as xgb # type: ignore
 from sklearn.metrics import classification_report, mean_squared_error, r2_score
 import pickle
 
@@ -11,7 +11,7 @@ class RetailPredictionModel:
     def __init__(self):
         self.customer_features = ['age', 'income', 'family_size']
         self.outlet_features = ['commercial_viability', 'competition_score', 'luxury_index']
-        self.location_features = ['commercial_score', 'public_transport_accessibility', 'population_density']
+        self.location_features = ['commercial_score', 'population_density']
         
         self.label_encoders = {}
         self.scaler = StandardScaler()
@@ -42,10 +42,10 @@ class RetailPredictionModel:
         
         # Load datasets
         print("Loading datasets...")
-        customers = pd.read_csv('customers.csv')
-        outlets = pd.read_csv('integrated_outlets.csv')
-        transactions = pd.read_csv('integrated_transactions.csv')
-        locations = pd.read_csv('mumbai_locations.csv')
+        customers = pd.read_csv('data\customers.csv')
+        outlets = pd.read_csv('data\integrated_outlets.csv')
+        transactions = pd.read_csv('data\integrated_transactions.csv')
+        locations = pd.read_csv('data\mumbai_locations.csv')
         
         # Encode categorical variables
         categorical_columns = {
@@ -224,9 +224,8 @@ class RetailPredictionModel:
             # Calculate normalized population density score
             pop_density_score = location['population_density'] / location_data['population_density'].max()
             
-            demographic_score = location['commercial_score'] * 0.4 + \
-                              location['public_transport_accessibility'] * 0.3 + \
-                              pop_density_score * 0.3
+            demographic_score = location['commercial_score'] * 0.6 + \
+                              pop_density_score * 0.4
             
             # Calculate potential customer base
             potential_customers = len(customer_data[
@@ -271,7 +270,7 @@ if __name__ == "__main__":
     # Generate location recommendations
     recommendations = model.generate_recommendations(locations, customers)
     print("\nTop 5 Recommended Locations:")
-    print(recommendations.head())
+    print(recommendations)
     
     # Save models
     model.save_models()

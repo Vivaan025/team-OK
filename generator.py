@@ -640,6 +640,7 @@ class IntegratedRetailDataGenerator(LuxuryRetailDataGenerator):
                 200 if is_luxury else 500
             ) * location_modifier)
             
+            
             conversion = np.random.beta(
                 8 if is_luxury else 5,
                 2 if is_luxury else 5
