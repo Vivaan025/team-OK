@@ -14,6 +14,12 @@ from models.response_models import CustomerInsights, CustomerSegment, ProductRec
 from models.request_models import StoreFeatures, PlacementRequest
 from services.sales_predictor import SalesPredictorService
 from services.revenue_suggestions import RevenueSuggestionService
+from models.comparison import StoreComparisonResponse, MetricComparison
+from services.store_comparison import StoreComparisonService
+from typing import Dict
+from services.product_predictor import ProductRevenuePredictionService
+from models.product import RevenuePredictionResponse
+import math
 
 router = APIRouter()
 
@@ -116,20 +122,20 @@ async def predict_preference(
             'membership_tier': customer['loyalty_info']['membership_tier']
         }
 
-        # Get recent transactions
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-        recent_transactions = list(predictor.db.transactions.find({
-            'customer_id': customer_id,
-            'date': {'$gte': cutoff_date}
-        }).sort('date', -1))
+        print("Customer Info:", customer_info)
 
-        if not recent_transactions:
-            print(f"No recent transactions found for customer {customer_id}")
+        # Use TransactionProcessor to get processed transactions
+        # This will automatically handle validation, processing, and logging
+        processed_transactions = predictor.transaction_processor.get_customer_transactions(
+            customer_id, 
+            days_back=days
+        )
 
         # Make prediction
         predicted_category, best_store, confidence = predictor.predict(
-            customer_info,
-            recent_transactions
+            customer_info=customer_info,
+            customer_id=customer_id,
+            recent_transactions=processed_transactions
         )
         
         return PreferenceResponse(
@@ -140,8 +146,10 @@ async def predict_preference(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
         raise HTTPException(status_code=500, detail=str(e))
-
+    
 @router.get("/customer-transactions/{customer_id}")
 async def get_customer_transactions(
     customer_id: str,
@@ -349,5 +357,367 @@ async def get_pricing_suggestions(
     try:
         suggestions = await service.analyze_pricing_opportunities(store_id)
         return suggestions
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+def get_comparison_service():
+    return StoreComparisonService()
+
+@router.get(
+    "/compare/{store1_id}/{store2_id}",
+    response_model=StoreComparisonResponse,
+    summary="Compare two stores across multiple metrics"
+)
+async def compare_stores(
+    store1_id: str,
+    store2_id: str,
+    days: int = Query(90, description="Number of days to analyze"),
+    service: StoreComparisonService = Depends(get_comparison_service)
+):
+    """
+    Compare two stores across multiple metrics
+    """
+    try:
+        # Perform the store comparison
+        comparison = await service.compare_stores(
+            store1_id=store1_id,
+            store2_id=store2_id,
+            days=days
+        )
+        
+        # Sanitize float values to prevent JSON serialization issues
+        def sanitize_float(value):
+            if isinstance(value, float):
+                # Handle inf and -inf
+                if math.isinf(value):
+                    return 0.0
+                # Limit to a reasonable range
+                return max(min(value, 1e10), -1e10)
+            return value
+        
+        def deep_sanitize(obj):
+            if isinstance(obj, dict):
+                return {k: deep_sanitize(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [deep_sanitize(item) for item in obj]
+            elif isinstance(obj, float):
+                return sanitize_float(obj)
+            return obj
+        
+        # Apply sanitization to the comparison object
+        sanitized_comparison = deep_sanitize(comparison.dict())
+        
+        return StoreComparisonResponse(**sanitized_comparison)
+    
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()  # Print full traceback for debugging
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get(
+    "/compare/metrics/{store1_id}/{store2_id}",
+    response_model=Dict[str, MetricComparison],
+    summary="Compare specific metrics between two stores"
+)
+async def compare_store_metrics(
+    store1_id: str,
+    store2_id: str,
+    metrics: List[str] = Query(
+        ['revenue', 'transactions', 'customers'],
+        description="Metrics to compare"
+    ),
+    days: int = Query(90, description="Number of days to analyze"),
+    service: StoreComparisonService = Depends(get_comparison_service)
+):
+    """
+    Compare specific metrics between two stores.
+    
+    Parameters:
+    - store1_id: ID of first store
+    - store2_id: ID of second store
+    - metrics: List of metrics to compare
+    - days: Analysis period in days (default: 90)
+    
+    Available metrics:
+    - revenue: Revenue comparison
+    - transactions: Transaction metrics
+    - customers: Customer metrics
+    - products: Product performance
+    - operations: Operational metrics
+    """
+    try:
+        comparison = await service.compare_stores(
+            store1_id=store1_id,
+            store2_id=store2_id,
+            days=days
+        )
+        
+        # Filter requested metrics
+        metric_comparisons = {}
+        for metric in metrics:
+            if metric == 'revenue':
+                metric_comparisons['revenue'] = comparison.revenue_comparison
+            elif metric == 'transactions':
+                metric_comparisons['transactions'] = comparison.transaction_comparison
+            elif metric == 'customers':
+                metric_comparisons['customers'] = comparison.customer_comparison
+                
+        return metric_comparisons
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+def get_prediction_service():
+    return ProductRevenuePredictionService()
+
+
+@router.get(
+    "/revenue-predictions/{store_id}",
+    response_model=RevenuePredictionResponse,
+    summary="Get revenue predictions for store products"
+)
+async def get_revenue_predictions(
+    store_id: str,
+    months: int = Query(3, description="Number of months to predict"),
+    category: Optional[str] = None,
+    service: ProductRevenuePredictionService = Depends(get_prediction_service)
+):
+    """
+    Get detailed revenue predictions and opportunities for store products.
+    
+    Parameters:
+    - store_id: Store identifier
+    - months: Number of months to predict (default: 3)
+    - category: Optional category filter
+    
+    Returns comprehensive prediction response including:
+    - Product-specific predictions
+    - Seasonal opportunities
+    - Festival opportunities
+    - Overall revenue projections
+    """
+    try:
+        predictions = await service.predict_revenue_opportunities(
+            store_id=store_id,
+            prediction_months=months
+        )
+        
+        # Apply category filter if specified
+        if category:
+            predictions.predictions = [
+                p for p in predictions.predictions
+                if service.db.products.find_one(
+                    {'product_id': p.product_id}
+                )['category'] == category
+            ]
+            
+# Update total projected increase for filtered predictions
+            predictions.total_projected_increase = sum(
+                max(0, p.projected_revenue - p.current_revenue)
+                for p in predictions.predictions
+            )
+            
+            # Update top categories
+            predictions.top_categories = [
+                cat for cat in predictions.top_categories 
+                if cat == category
+            ]
+            
+            # Filter opportunities
+            predictions.seasonal_opportunities = [
+                opp for opp in predictions.seasonal_opportunities
+                if service.db.products.find_one(
+                    {'product_id': opp['product_id']}
+                )['category'] == category
+            ]
+            
+            predictions.festival_opportunities = [
+                opp for opp in predictions.festival_opportunities
+                if service.db.products.find_one(
+                    {'product_id': opp['product_id']}
+                )['category'] == category
+            ]
+        
+        return predictions
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/seasonal-predictions/{store_id}",
+    response_model=List[Dict],
+    summary="Get seasonal revenue opportunities"
+)
+async def get_seasonal_predictions(
+    store_id: str,
+    months: int = Query(3, description="Number of months to analyze"),
+    min_impact: float = Query(0.2, description="Minimum seasonal impact"),
+    service: ProductRevenuePredictionService = Depends(get_prediction_service)
+):
+    """
+    Get seasonal revenue opportunities for the store.
+    
+    Parameters:
+    - store_id: Store identifier
+    - months: Number of months to analyze (default: 3)
+    - min_impact: Minimum seasonal impact threshold (default: 0.2)
+    
+    Returns list of seasonal opportunities with recommendations.
+    """
+    try:
+        predictions = await service.predict_revenue_opportunities(
+            store_id=store_id,
+            prediction_months=months
+        )
+        
+        opportunities = [
+            opp for opp in predictions.seasonal_opportunities
+            if opp['seasonal_impact'] >= min_impact
+        ]
+        
+        return sorted(
+            opportunities,
+            key=lambda x: x['potential_revenue'],
+            reverse=True
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/festival-predictions/{store_id}",
+    response_model=List[Dict],
+    summary="Get festival-related revenue opportunities"
+)
+async def get_festival_predictions(
+    store_id: str,
+    months: int = Query(3, description="Number of months to analyze"),
+    festival: Optional[str] = None,
+    service: ProductRevenuePredictionService = Depends(get_prediction_service)
+):
+    """
+    Get festival-related revenue opportunities for the store.
+    
+    Parameters:
+    - store_id: Store identifier
+    - months: Number of months to analyze (default: 3)
+    - festival: Optional specific festival filter
+    
+    Returns list of festival opportunities with recommendations.
+    """
+    try:
+        predictions = await service.predict_revenue_opportunities(
+            store_id=store_id,
+            prediction_months=months
+        )
+        
+        opportunities = predictions.festival_opportunities
+        if festival:
+            opportunities = [
+                opp for opp in opportunities
+                if opp['festival'].lower() == festival.lower()
+            ]
+            
+        return sorted(
+            opportunities,
+            key=lambda x: x['potential_revenue'],
+            reverse=True
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/product-optimization/{store_id}/{product_id}",
+    response_model=Dict,
+    summary="Get product optimization recommendations"
+)
+async def get_product_optimization(
+    store_id: str,
+    product_id: str,
+    service: ProductRevenuePredictionService = Depends(get_prediction_service)
+):
+    """
+    Get detailed optimization recommendations for a specific product.
+    
+    Parameters:
+    - store_id: Store identifier
+    - product_id: Product identifier
+    
+    Returns optimization recommendations including:
+    - Optimal price
+    - Optimal stock levels
+    - Seasonal adjustments
+    - Festival opportunities
+    """
+    try:
+        # Get historical data
+        df = await service._get_historical_data(store_id)
+        product_df = df[df['product_id'] == product_id].copy()
+        
+        if len(product_df.index) == 0:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data found for product {product_id}"
+            )
+            
+        product = service.db.products.find_one({'product_id': product_id})
+        if not product:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Product {product_id} not found"
+            )
+            
+        # Calculate metrics
+        current_metrics = service._calculate_current_metrics(product_df)
+        seasonal_factors = service._calculate_seasonal_factors(
+            product['category'],
+            product_df,
+            3  # Next 3 months
+        )
+        festival_impact = service._calculate_festival_impact(
+            product['category'],
+            3
+        )
+        
+        # Get optimization recommendations
+        optimal_price = service._calculate_optimal_price(
+            product,
+            current_metrics,
+            seasonal_factors
+        )
+        
+        optimal_stock = service._calculate_optimal_stock(
+            current_metrics,
+            seasonal_factors,
+            festival_impact
+        )
+        
+        return {
+            'product_id': product_id,
+            'product_name': product['name'],
+            'category': product['category'],
+            'current_metrics': current_metrics,
+            'optimal_price': optimal_price,
+            'optimal_stock': optimal_stock,
+            'seasonal_factors': seasonal_factors,
+            'festival_impact': festival_impact,
+            'recommendations': [
+                rec for rec in [
+                    "Price optimization recommended" if optimal_price and optimal_price > product['pricing']['current_price'] else None,
+                    "Stock level adjustment needed" if optimal_stock and abs(optimal_stock - product['inventory']['total_stock']) > 20 else None,
+                    "Prepare for seasonal demand increase" if max(seasonal_factors) > 1.2 else None,
+                    "Festival opportunity identified" if festival_impact > 0.1 else None
+                ] if rec is not None
+            ]
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
